@@ -250,7 +250,7 @@ const WaterLevelDashboard = () => {
           <div className="chart-container">
             <div className="chart-card">
               <h3>Water Level History</h3>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={historyData}>
                   <defs>
                     <linearGradient id="colorLevel" x1="0" y1="0" x2="0" y2="1">
