@@ -1,16 +1,17 @@
 # Innotech Water Level Dashboard
 
-A real-time water level monitoring dashboard with flood hazard detection. Built with React and WebSocket for live data streaming from ESP32.
+A real-time water level monitoring dashboard with flood hazard detection. Built with React and MQTT for live data streaming from ESP32, enabling remote monitoring from anywhere.
 
 ## Features
 
 - 🌊 Real-time water level monitoring
 - 🚨 Flood hazard detection and alerts
 - 📊 Live data visualization with charts
-- 📡 WebSocket connection to ESP32
+- 📡 MQTT connection for remote access
 - 🔄 Auto-reconnect on connection loss
 - 📱 Responsive design for all devices
 - 🎨 Modern, visually appealing UI
+- 🌐 Works from anywhere (not limited to local network)
 
 ## Setup
 
@@ -28,16 +29,21 @@ npm run dev
 
 The dashboard will be available at `http://localhost:3000`
 
-### 3. Configure ESP32 Connection
+### 3. Configure MQTT Connection
 
 1. Open the dashboard in your browser
-2. Enter your ESP32's IP address (default: `192.168.1.100`)
-3. Enter the WebSocket port (default: `81`)
+2. Enter MQTT Broker URL (default: `wss://broker.hivemq.com:8004/mqtt`)
+3. Enter MQTT Topic (default: `innotech/water-level`)
 4. Click "Connect"
 
-## ESP32 WebSocket Data Format
+**Popular Free MQTT Brokers:**
+- HiveMQ Cloud (Public): `wss://broker.hivemq.com:8004/mqtt`
+- Mosquitto Test: `wss://test.mosquitto.org:8081`
+- Eclipse IoT: `wss://mqtt.eclipseprojects.io:443/mqtt`
 
-Your ESP32 should send JSON data via WebSocket in one of these formats:
+## ESP32 MQTT Data Format
+
+Your ESP32 should publish JSON data to the MQTT topic in one of these formats:
 
 ### Option 1: Simple format
 ```json
@@ -125,25 +131,109 @@ const hazardThreshold = data.hazardThreshold || 80 // Change 80 to your desired 
 
 If your sensor uses a different scale (e.g., 0-200cm instead of 0-100%), modify the component to convert the values accordingly.
 
+## ESP32 Code Example
+
+Here's a sample Arduino code for ESP32 to publish water level data to MQTT:
+
+```cpp
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+// WiFi credentials
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+// MQTT Broker settings
+const char* mqtt_server = "broker.hivemq.com";
+const int mqtt_port = 1883;
+const char* mqtt_topic = "innotech/water-level";
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void setup() {
+  Serial.begin(115200);
+  
+  // Connect to WiFi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi connected");
+  
+  // Connect to MQTT broker
+  client.setServer(mqtt_server, mqtt_port);
+  while (!client.connected()) {
+    if (client.connect("ESP32WaterLevel")) {
+      Serial.println("MQTT connected");
+    } else {
+      Serial.print("MQTT connection failed, retrying...");
+      delay(2000);
+    }
+  }
+}
+
+void loop() {
+  // Ensure MQTT connection is maintained
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+  
+  // Read water level from your sensor (example)
+  float waterLevel = readWaterLevel(); // Your sensor reading function
+  
+  // Create JSON payload
+  String payload = "{\"waterLevel\":" + String(waterLevel) + "}";
+  
+  // Publish to MQTT topic
+  client.publish(mqtt_topic, payload.c_str());
+  
+  delay(5000); // Publish every 5 seconds
+}
+
+float readWaterLevel() {
+  // Replace with your actual sensor reading code
+  // Example: analogRead() or sensor library
+  return 75.5; // Mock value
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    if (client.connect("ESP32WaterLevel")) {
+      Serial.println("MQTT reconnected");
+    } else {
+      delay(2000);
+    }
+  }
+}
+```
+
+**Required Libraries:**
+- Install `PubSubClient` library in Arduino IDE
+- Library Manager: Search for "PubSubClient" by Nick O'Leary
+
 ## Troubleshooting
 
 ### Connection Issues
-- Ensure ESP32 and your computer are on the same WiFi network
-- Check firewall settings (WebSocket uses specific ports)
-- Verify ESP32 IP address is correct
-- Check if ESP32 WebSocket server is running
+- Verify MQTT broker URL is correct (use `wss://` for secure WebSocket)
+- Check if MQTT broker requires authentication (some brokers need username/password)
+- Ensure ESP32 is connected to WiFi and can reach the MQTT broker
+- Check browser console for MQTT connection errors
 
 ### Data Not Displaying
-- Verify ESP32 is sending data in correct JSON format
-- Check browser console for WebSocket errors
-- Ensure WebSocket message format matches expected structure
+- Verify ESP32 is publishing to the correct MQTT topic
+- Check browser console for MQTT subscription errors
+- Ensure MQTT message format matches expected JSON structure
+- Test with an MQTT client tool (like MQTT Explorer) to verify data is being published
 
 ## Tech Stack
 
 - **React 18** - UI Framework
 - **Vite** - Build tool and dev server
 - **Recharts** - Data visualization
-- **WebSocket** - Real-time communication
+- **MQTT** - Real-time communication (works from anywhere)
 
 ## License
 

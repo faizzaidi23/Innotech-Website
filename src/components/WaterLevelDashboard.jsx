@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from 'recharts'
+import mqtt from 'mqtt'
 import './WaterLevelDashboard.css'
 
 const WaterLevelDashboard = () => {
@@ -7,71 +8,102 @@ const WaterLevelDashboard = () => {
   const [waterLevel, setWaterLevel] = useState(0)
   const [isHazardous, setIsHazardous] = useState(false)
   const [historyData, setHistoryData] = useState([])
-  const [espIp, setEspIp] = useState('192.168.1.100')
-  const [espPort, setEspPort] = useState('81')
+  const [mqttBroker, setMqttBroker] = useState('wss://broker.hivemq.com:8004/mqtt')
+  const [mqttTopic, setMqttTopic] = useState('innotech/water-level')
   const [lastUpdate, setLastUpdate] = useState(null)
-  const wsRef = useRef(null)
+  const mqttClientRef = useRef(null)
   const reconnectTimeoutRef = useRef(null)
   const maxDataPoints = 100
 
   useEffect(() => {
-    connectWebSocket()
-    
+    // Don't auto-connect on mount, let user click connect
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close()
+      if (mqttClientRef.current) {
+        mqttClientRef.current.end()
       }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
       }
     }
-  }, [espIp, espPort])
+  }, [])
 
-  const connectWebSocket = () => {
+  const connectMQTT = () => {
     try {
-      const wsUrl = `ws://${espIp}:${espPort}`
-      console.log('Connecting to:', wsUrl)
-      
-      const ws = new WebSocket(wsUrl)
+      // Close existing connection if any
+      if (mqttClientRef.current) {
+        mqttClientRef.current.end()
+      }
 
-      ws.onopen = () => {
-        console.log('WebSocket Connected')
+      console.log('Connecting to MQTT broker:', mqttBroker)
+      console.log('Subscribing to topic:', mqttTopic)
+
+      // Generate unique client ID
+      const clientId = `water-level-dashboard-${Math.random().toString(16).substr(2, 8)}`
+      
+      // Connect to MQTT broker
+      const client = mqtt.connect(mqttBroker, {
+        clientId: clientId,
+        clean: true,
+        reconnectPeriod: 5000,
+        connectTimeout: 10000,
+      })
+
+      client.on('connect', () => {
+        console.log('MQTT Connected')
         setIsConnected(true)
+        
+        // Subscribe to the topic
+        client.subscribe(mqttTopic, (err) => {
+          if (err) {
+            console.error('Subscription error:', err)
+          } else {
+            console.log('Subscribed to topic:', mqttTopic)
+          }
+        })
+
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current)
         }
-      }
+      })
 
-      ws.onmessage = (event) => {
+      client.on('message', (topic, message) => {
         try {
-          const data = JSON.parse(event.data)
+          const data = JSON.parse(message.toString())
           handleWaterLevelData(data)
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error)
+          console.error('Error parsing MQTT message:', error)
           // Try to parse as plain number if JSON fails
-          const level = parseFloat(event.data)
+          const level = parseFloat(message.toString())
           if (!isNaN(level)) {
             handleWaterLevelData({ waterLevel: level })
           }
         }
-      }
+      })
 
-      ws.onerror = (error) => {
-        console.error('WebSocket Error:', error)
+      client.on('error', (error) => {
+        console.error('MQTT Error:', error)
         setIsConnected(false)
-      }
+      })
 
-      ws.onclose = () => {
-        console.log('WebSocket Disconnected')
+      client.on('close', () => {
+        console.log('MQTT Disconnected')
         setIsConnected(false)
+        // Auto-reconnect after 3 seconds
         reconnectTimeoutRef.current = setTimeout(() => {
-          connectWebSocket()
+          if (!mqttClientRef.current || mqttClientRef.current.disconnected) {
+            connectMQTT()
+          }
         }, 3000)
-      }
+      })
 
-      wsRef.current = ws
+      client.on('offline', () => {
+        console.log('MQTT Client offline')
+        setIsConnected(false)
+      })
+
+      mqttClientRef.current = client
     } catch (error) {
-      console.error('Failed to create WebSocket:', error)
+      console.error('Failed to create MQTT connection:', error)
       setIsConnected(false)
     }
   }
@@ -108,15 +140,15 @@ const WaterLevelDashboard = () => {
   }
 
   const handleReconnect = () => {
-    if (wsRef.current) {
-      wsRef.current.close()
+    if (mqttClientRef.current) {
+      mqttClientRef.current.end()
     }
-    connectWebSocket()
+    connectMQTT()
   }
 
   const handleDisconnect = () => {
-    if (wsRef.current) {
-      wsRef.current.close()
+    if (mqttClientRef.current) {
+      mqttClientRef.current.end()
     }
     setIsConnected(false)
   }
@@ -155,23 +187,23 @@ const WaterLevelDashboard = () => {
 
       <div className="dashboard-controls">
         <div className="input-group">
-          <label>ESP32 IP Address:</label>
+          <label>MQTT Broker URL:</label>
           <input
             type="text"
-            value={espIp}
-            onChange={(e) => setEspIp(e.target.value)}
+            value={mqttBroker}
+            onChange={(e) => setMqttBroker(e.target.value)}
             disabled={isConnected}
-            placeholder="192.168.1.100"
+            placeholder="wss://broker.hivemq.com:8004/mqtt"
           />
         </div>
         <div className="input-group">
-          <label>WebSocket Port:</label>
+          <label>MQTT Topic:</label>
           <input
             type="text"
-            value={espPort}
-            onChange={(e) => setEspPort(e.target.value)}
+            value={mqttTopic}
+            onChange={(e) => setMqttTopic(e.target.value)}
             disabled={isConnected}
-            placeholder="81"
+            placeholder="innotech/water-level"
           />
         </div>
         <div className="button-group">
