@@ -171,6 +171,25 @@
   box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
 }
 
+/* Error Message */
+.error-message {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  border: 2px solid #fbbf24;
+  padding: 12px 20px;
+  border-radius: 16px;
+  margin-bottom: 15px;
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: white;
+  font-weight: 500;
+}
+
+.error-icon {
+  font-size: 20px;
+}
+
 /* Hazard Alert */
 .hazard-alert {
   background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);

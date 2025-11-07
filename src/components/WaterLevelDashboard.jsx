@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from 'recharts'
-import mqtt from 'mqtt'
+// WebSocket version (no MQTT)
 import './WaterLevelDashboard.css'
 
 const WaterLevelDashboard = () => {
@@ -8,102 +8,122 @@ const WaterLevelDashboard = () => {
   const [waterLevel, setWaterLevel] = useState(0)
   const [isHazardous, setIsHazardous] = useState(false)
   const [historyData, setHistoryData] = useState([])
-  const [mqttBroker, setMqttBroker] = useState('wss://broker.hivemq.com:8004/mqtt')
-  const [mqttTopic, setMqttTopic] = useState('innotech/water-level')
+  const [espIp, setEspIp] = useState('192.168.1.100')
+  const [espPort, setEspPort] = useState('81')
   const [lastUpdate, setLastUpdate] = useState(null)
-  const mqttClientRef = useRef(null)
+  const [connectionStatus, setConnectionStatus] = useState('Disconnected')
+  const [connectionError, setConnectionError] = useState('')
+  const wsRef = useRef(null)
   const reconnectTimeoutRef = useRef(null)
   const maxDataPoints = 100
 
   useEffect(() => {
-    // Don't auto-connect on mount, let user click connect
+    // Cleanup on unmount
     return () => {
-      if (mqttClientRef.current) {
-        mqttClientRef.current.end()
-      }
+      if (wsRef.current) wsRef.current.close()
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
       }
     }
   }, [])
 
-  const connectMQTT = () => {
+  const connectWebSocket = () => {
     try {
-      // Close existing connection if any
-      if (mqttClientRef.current) {
-        mqttClientRef.current.end()
+      // Validate inputs first
+      if (!espIp.trim() || !espPort.trim()) {
+        setConnectionError('Please enter both IP address and port')
+        return
       }
 
-      console.log('Connecting to MQTT broker:', mqttBroker)
-      console.log('Subscribing to topic:', mqttTopic)
+      // Validate IP format (basic check)
+      const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/
+      if (!ipRegex.test(espIp.trim())) {
+        setConnectionError('Please enter a valid IP address (e.g., 192.168.1.100)')
+        return
+      }
 
-      // Generate unique client ID
-      const clientId = `water-level-dashboard-${Math.random().toString(16).substr(2, 8)}`
+      // Validate port
+      const portNum = parseInt(espPort)
+      if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+        setConnectionError('Please enter a valid port number (1-65535)')
+        return
+      }
+
+      if (wsRef.current) {
+        wsRef.current.close()
+        wsRef.current = null
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+
+      setConnectionStatus('Connecting...')
+      setConnectionError('')
+      setIsConnected(false)
       
-      // Connect to MQTT broker
-      const client = mqtt.connect(mqttBroker, {
-        clientId: clientId,
-        clean: true,
-        reconnectPeriod: 5000,
-        connectTimeout: 10000,
-      })
+      // Add trailing slash to WebSocket URL for proper connection
+      const wsUrl = `ws://${espIp.trim()}:${espPort.trim()}/`
+      console.log('Connecting WebSocket to:', wsUrl)
+      const ws = new WebSocket(wsUrl)
 
-      client.on('connect', () => {
-        console.log('MQTT Connected')
-        setIsConnected(true)
-        
-        // Subscribe to the topic
-        client.subscribe(mqttTopic, (err) => {
-          if (err) {
-            console.error('Subscription error:', err)
-          } else {
-            console.log('Subscribed to topic:', mqttTopic)
-          }
-        })
-
-        if (reconnectTimeoutRef.current) {
-          clearTimeout(reconnectTimeoutRef.current)
+      // 15s timeout if cannot connect
+      const connectionTimeout = setTimeout(() => {
+        if (ws.readyState !== 1) {
+          setConnectionError('Connection timeout. Check ESP IP/port and that WS server is running.')
+          setConnectionStatus('Connection Timeout')
+          try { ws.close() } catch {}
         }
-      })
+      }, 15000)
 
-      client.on('message', (topic, message) => {
+      ws.onopen = () => {
+        clearTimeout(connectionTimeout)
+        console.log('WebSocket Connected')
+        setConnectionStatus('Connected')
+        setConnectionError('')
+        setIsConnected(true)
+      }
+
+      ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(message.toString())
+          const data = JSON.parse(event.data)
+          console.log('Received data:', data) // Debug log
           handleWaterLevelData(data)
-        } catch (error) {
-          console.error('Error parsing MQTT message:', error)
-          // Try to parse as plain number if JSON fails
-          const level = parseFloat(message.toString())
+        } catch (err) {
+          console.log('Parsing as raw number...')
+          const level = parseFloat(event.data)
           if (!isNaN(level)) {
             handleWaterLevelData({ waterLevel: level })
+          } else {
+            console.error('Invalid data format:', event.data)
+            setConnectionError('Invalid data format received from sensor')
           }
         }
-      })
+      }
 
-      client.on('error', (error) => {
-        console.error('MQTT Error:', error)
+      ws.onerror = (error) => {
+        clearTimeout(connectionTimeout)
+        console.error('WebSocket error:', error)
+        setConnectionError(`Connection error: Cannot reach ${espIp}:${espPort}. Check if the server is running.`)
+        setConnectionStatus('Connection Error')
         setIsConnected(false)
-      })
+      }
 
-      client.on('close', () => {
-        console.log('MQTT Disconnected')
+      ws.onclose = () => {
+        console.log('WebSocket Disconnected')
         setIsConnected(false)
-        // Auto-reconnect after 3 seconds
+        setConnectionStatus('Disconnected')
+        // auto-reconnect after 3s
         reconnectTimeoutRef.current = setTimeout(() => {
-          if (!mqttClientRef.current || mqttClientRef.current.disconnected) {
-            connectMQTT()
-          }
+          connectWebSocket()
         }, 3000)
-      })
+      }
 
-      client.on('offline', () => {
-        console.log('MQTT Client offline')
-        setIsConnected(false)
-      })
-
-      mqttClientRef.current = client
+      wsRef.current = ws
     } catch (error) {
-      console.error('Failed to create MQTT connection:', error)
+      console.error('Failed to open WebSocket:', error)
+      setConnectionError(`Failed to connect: ${error.message || error}`)
+      setConnectionStatus('Connection Failed')
       setIsConnected(false)
     }
   }
@@ -140,17 +160,22 @@ const WaterLevelDashboard = () => {
   }
 
   const handleReconnect = () => {
-    if (mqttClientRef.current) {
-      mqttClientRef.current.end()
-    }
-    connectMQTT()
+    if (wsRef.current) wsRef.current.close()
+    connectWebSocket()
   }
 
   const handleDisconnect = () => {
-    if (mqttClientRef.current) {
-      mqttClientRef.current.end()
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+      reconnectTimeoutRef.current = null
+    }
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
     }
     setIsConnected(false)
+    setConnectionStatus('Disconnected')
+    setConnectionError('')
   }
 
   // Calculate water level percentage (assuming 0-100 scale, adjust as needed)
@@ -180,30 +205,30 @@ const WaterLevelDashboard = () => {
             <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
               {isConnected ? '●' : '○'}
             </span>
-            <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+            <span>{connectionStatus}</span>
           </div>
         </div>
       </header>
 
       <div className="dashboard-controls">
         <div className="input-group">
-          <label>MQTT Broker URL:</label>
+          <label>ESP IP Address:</label>
           <input
             type="text"
-            value={mqttBroker}
-            onChange={(e) => setMqttBroker(e.target.value)}
+            value={espIp}
+            onChange={(e) => setEspIp(e.target.value)}
             disabled={isConnected}
-            placeholder="wss://broker.hivemq.com:8004/mqtt"
+            placeholder="192.168.1.100"
           />
         </div>
         <div className="input-group">
-          <label>MQTT Topic:</label>
+          <label>WebSocket Port:</label>
           <input
             type="text"
-            value={mqttTopic}
-            onChange={(e) => setMqttTopic(e.target.value)}
+            value={espPort}
+            onChange={(e) => setEspPort(e.target.value)}
             disabled={isConnected}
-            placeholder="innotech/water-level"
+            placeholder="81"
           />
         </div>
         <div className="button-group">
@@ -218,6 +243,14 @@ const WaterLevelDashboard = () => {
           )}
         </div>
       </div>
+
+      {/* Connection Error Display */}
+      {connectionError && (
+        <div className="error-message">
+          <span className="error-icon">⚠️</span>
+          <span>{connectionError}</span>
+        </div>
+      )}
 
       {/* Hazard Alert Banner */}
       {isHazardous && (
