@@ -326,11 +326,11 @@ const WaterLevelDashboard = () => {
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                   <XAxis 
                     dataKey="time" 
-                    tick={{ fill: '#9ca3af', fontSize: 12 }}
+                    tick={{ fill: '#9ca3af', fontSize: 14 }}
                     interval="preserveStartEnd"
                   />
                   <YAxis 
-                    tick={{ fill: '#9ca3af', fontSize: 12 }}
+                    tick={{ fill: '#9ca3af', fontSize: 14 }}
                     domain={[0, 100]}
                     label={{ value: 'Water Level (%)', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
                   />
