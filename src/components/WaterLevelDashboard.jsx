@@ -330,7 +330,7 @@ const WaterLevelDashboard = () => {
                     interval="preserveStartEnd"
                   />
                   <YAxis 
-                    tick={{ fill: '#9ca3af', fontSize: 14 }}
+                    tick={{ fill: '#9ca3af', fontSize: 24 }}
                     domain={[0, 100]}
                     label={{ value: 'Water Level (%)', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
                   />
