@@ -16,6 +16,9 @@ const WaterLevelDashboard = () => {
   const wsRef = useRef(null)
   const reconnectTimeoutRef = useRef(null)
   const maxDataPoints = 100
+  const [telegramEnabled, setTelegramEnabled] = useState(true)
+  const [lastAlertLevel, setLastAlertLevel] = useState(null)
+  const TELEGRAM_API_URL = 'http://localhost:3001/api/alert'
 
   useEffect(() => {
     // Cleanup on unmount
@@ -139,8 +142,14 @@ const WaterLevelDashboard = () => {
     // Check if hazardous (flood situation)
     // You can adjust this threshold based on your ESP code
     const hazardThreshold = data.hazardThreshold || 80 // Default threshold
+    const warningThreshold = 70 // Warning threshold for Telegram alerts
     const isHazard = level >= hazardThreshold
     setIsHazardous(isHazard)
+    
+    // Send Telegram alert if level is above warning threshold
+    if (telegramEnabled && level >= warningThreshold) {
+      sendTelegramAlert(level, isHazard)
+    }
     
     // Add to history for chart
     const timestamp = new Date().toLocaleTimeString()
@@ -157,6 +166,42 @@ const WaterLevelDashboard = () => {
       }
       return updated
     })
+  }
+
+  const sendTelegramAlert = async (level, isHazard) => {
+    // Determine alert status
+    const status = isHazard ? 'FLOOD_HAZARD' : 'WARNING'
+    
+    // Only send if alert level changed to prevent spam
+    if (lastAlertLevel === status) {
+      return
+    }
+
+    try {
+      const response = await fetch(TELEGRAM_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          waterLevel: level,
+          status: status,
+          timestamp: new Date().toLocaleString()
+        })
+      })
+
+      const result = await response.json()
+      
+      if (result.success) {
+        console.log('✅ Telegram alert sent successfully')
+        setLastAlertLevel(status)
+      } else {
+        console.error('❌ Failed to send Telegram alert:', result.message)
+      }
+    } catch (error) {
+      console.error('❌ Error sending Telegram alert:', error)
+      // Don't show error to user, just log it
+    }
   }
 
   const handleReconnect = () => {
@@ -241,6 +286,20 @@ const WaterLevelDashboard = () => {
               Disconnect
             </button>
           )}
+        </div>
+        <div className="input-group">
+          <label>
+            <input
+              type="checkbox"
+              checked={telegramEnabled}
+              onChange={(e) => {
+                setTelegramEnabled(e.target.checked)
+                setLastAlertLevel(null) // Reset alert level when toggling
+              }}
+              style={{ marginRight: '8px', width: 'auto' }}
+            />
+            📱 Telegram Alerts (70%+)
+          </label>
         </div>
       </div>
 
