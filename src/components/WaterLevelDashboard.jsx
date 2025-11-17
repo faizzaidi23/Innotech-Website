@@ -136,6 +136,8 @@ const WaterLevelDashboard = () => {
     // Support multiple possible field names
     const level = data.waterLevel || data.water_level || data.level || data.value || 0
     
+    console.log('📊 Water level received:', level, '| Telegram enabled:', telegramEnabled)
+    
     setWaterLevel(level)
     setLastUpdate(new Date())
     
@@ -148,7 +150,12 @@ const WaterLevelDashboard = () => {
     
     // Send Telegram alert if level is above warning threshold
     if (telegramEnabled && level >= warningThreshold) {
+      console.log('🚨 Alert condition met! Level:', level, '≥', warningThreshold)
       sendTelegramAlert(level, isHazard)
+    } else if (level < warningThreshold) {
+      console.log('✅ Water level safe:', level, '< 70%')
+    } else if (!telegramEnabled) {
+      console.log('⚠️ Telegram alerts are disabled')
     }
     
     // Add to history for chart
@@ -172,12 +179,16 @@ const WaterLevelDashboard = () => {
     // Determine alert status
     const status = isHazard ? 'FLOOD_HAZARD' : 'WARNING'
     
+    console.log('🔔 Sending Telegram alert | Status:', status, '| Last alert:', lastAlertLevel)
+    
     // Only send if alert level changed to prevent spam
     if (lastAlertLevel === status) {
+      console.log('⏸️ Alert skipped - same status already sent (cooldown)')
       return
     }
 
     try {
+      console.log('📡 Calling Telegram API:', TELEGRAM_API_URL)
       const response = await fetch(TELEGRAM_API_URL, {
         method: 'POST',
         headers: {
@@ -191,6 +202,7 @@ const WaterLevelDashboard = () => {
       })
 
       const result = await response.json()
+      console.log('📬 API Response:', result)
       
       if (result.success) {
         console.log('✅ Telegram alert sent successfully')

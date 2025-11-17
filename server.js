@@ -12,7 +12,7 @@ app.use(express.json());
 
 // Store last alert time to prevent spam
 let lastAlertTime = {};
-const ALERT_COOLDOWN = 5 * 60 * 1000; // 5 minutes cooldown
+const ALERT_COOLDOWN = 15 * 1000; // 15 seconds cooldown
 
 // Telegram configuration - From environment variables
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE';
@@ -57,25 +57,38 @@ function canSendAlert(alertType) {
  * Send water level alert via Telegram
  */
 app.post('/api/alert', async (req, res) => {
+  console.log('📨 ===== INCOMING ALERT REQUEST =====');
+  console.log('📊 Request body:', req.body);
+  console.log('🕐 Time:', new Date().toLocaleString());
+  
   try {
     const { waterLevel, status, timestamp } = req.body;
 
     // Validate input
     if (waterLevel === undefined || waterLevel === null) {
+      console.log('❌ Validation failed: Water level missing');
       return res.status(400).json({ 
         success: false, 
         message: 'Water level is required' 
       });
     }
 
+    console.log('✅ Water level received:', waterLevel);
+    console.log('📍 Status:', status);
+
     // Check cooldown to prevent spam
     const alertType = status === 'FLOOD_HAZARD' ? 'hazard' : 'warning';
+    console.log('🔍 Checking cooldown for alert type:', alertType);
+    
     if (!canSendAlert(alertType)) {
+      console.log('⏸️ Alert blocked - cooldown active');
       return res.status(429).json({ 
         success: false, 
         message: 'Alert sent recently. Please wait before sending another.' 
       });
     }
+    
+    console.log('✅ Cooldown check passed - proceeding with alert');
 
     // Create alert message
     let message = '';
@@ -103,10 +116,16 @@ Please monitor the situation closely.
     }
 
     // Send to Telegram
-    await sendTelegramMessage(message);
+    console.log('📤 Sending message to Telegram...');
+    console.log('📝 Message:', message);
+    
+    const result = await sendTelegramMessage(message);
+    console.log('✅ Telegram API response:', result);
 
     // Update last alert time
     lastAlertTime[alertType] = Date.now();
+    console.log('💾 Updated cooldown timer for:', alertType);
+    console.log('🎉 ===== ALERT SENT SUCCESSFULLY =====\n');
 
     res.json({ 
       success: true, 
@@ -115,7 +134,11 @@ Please monitor the situation closely.
     });
 
   } catch (error) {
-    console.error('Error sending alert:', error);
+    console.error('❌ ===== ERROR SENDING ALERT =====');
+    console.error('❌ Error:', error.message);
+    console.error('❌ Full error:', error.response?.data || error);
+    console.error('❌ ================================\n');
+    
     res.status(500).json({ 
       success: false, 
       message: 'Failed to send alert',
